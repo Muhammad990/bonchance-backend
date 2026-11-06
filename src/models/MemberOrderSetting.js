@@ -7,6 +7,8 @@ const productItemSchema = new mongoose.Schema(
     picture: { type: String, default: '' },
     price: { type: Number, default: 0 },
     rating: { type: Number, default: 0 },
+    multiplier: { type: Number, default: 1 },
+    returnAmount: { type: Number, default: 0 },
   },
   { _id: false }
 );

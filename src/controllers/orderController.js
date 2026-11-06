@@ -113,6 +113,8 @@ export const startOrder = asyncHandler(async (req, res, next) => {
       picture: head.picture || '',
       price: String(head.price ?? 0),
       rating: Number(head.rating) || 0,
+      returnAmount: head.returnAmount,
+      multiplier: head.multiplier,
     };
     fromQueue = true;
   } else {
@@ -144,7 +146,9 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     await setting.save();
   }
 
-  const commission = computeCommission(price, level?.orderCommissionRate);
+  const commission = fromQueue && Number.isFinite(Number(product.returnAmount)) && Number(product.returnAmount) > 0
+    ? Math.round(Number(product.returnAmount) * 100) / 100
+    : computeCommission(price, level?.orderCommissionRate);
   const order = await Order.create({
     orderNumber: generateOrderNumber(),
     memberId: member.memberId,
