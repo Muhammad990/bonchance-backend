@@ -8,7 +8,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { logWalletTransaction } from '../utils/walletLogger.js';
-import { syncDailyCounters } from '../utils/dailyCounterHelper.js';
+import { syncDailyCounters, syncDailyCountersAsync } from '../utils/dailyCounterHelper.js';
 import jwt from 'jsonwebtoken';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -85,12 +85,21 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     );
   }
 
-  syncDailyCounters(member);
-  if (member.isModified('taskStatusDate')) await member.save();
+  await syncDailyCountersAsync(member);
+  if (member.isModified('taskStatusDate') || member.isModified('taskStatus')) await member.save();
 
   const level = await MembershipLevel.findOne({ name: member.vipLevel }).lean();
   const dailyVolume = Number(level?.dailyOrderVolume) || 30;
-  if ((member.taskStatus || 0) >= dailyVolume) {
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const usedToday = await Order.find({
+    memberId: member.memberId,
+    transactionStatus: 'Complete payment',
+    createdAt: { $gte: todayStart },
+  }).select('_id');
+
+  if ((member.taskStatus || 0) >= dailyVolume && usedToday.length >= dailyVolume) {
     return next(new ApiError(400, `Daily order limit reached for your VIP level (${dailyVolume})`));
   }
 

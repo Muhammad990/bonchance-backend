@@ -11,7 +11,7 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { generateToken } from '../utils/generateToken.js';
 import { getLevelLimits } from '../utils/membershipLevelHelper.js';
-import { syncDailyCounters, todayKey } from '../utils/dailyCounterHelper.js';
+import { syncDailyCounters, syncDailyCountersAsync, todayKey } from '../utils/dailyCounterHelper.js';
 
 export const register = asyncHandler(async (req, res, next) => {
   const { name, email, password } = req.body;
@@ -298,8 +298,10 @@ export const getMe = asyncHandler(async (req, res, next) => {
     return next(new ApiError(401, 'Not authorized, user not found'));
   }
 
-  syncDailyCounters(member);
-  if (member.isModified('taskStatusDate')) await member.save();
+  await syncDailyCountersAsync(member);
+  if (member.isModified('taskStatusDate') || member.isModified('taskStatus') || member.isModified('todayProfit')) {
+    await member.save();
+  }
 
   const data = publicMember(member);
   const level = await MembershipLevel.findOne({ name: member.vipLevel }).lean();
