@@ -10,6 +10,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { logWalletTransaction } from '../utils/walletLogger.js';
 import { syncDailyCounters, syncDailyCountersAsync } from '../utils/dailyCounterHelper.js';
 import jwt from 'jsonwebtoken';
+import { getBasicTimeSettings, secondsInTimeZone, isSecondsInWindow } from '../utils/timeWindowHelper.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -34,9 +35,19 @@ const readToken = (req) => {
   return null;
 };
 
-const timeInWindow = (d = new Date()) => {
-  const secs = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
-  return secs >= 9 * 3600 && secs <= 23 * 3600 + 58 * 60 + 59;
+const timeInWindow = async () => {
+  const settings = await getBasicTimeSettings();
+  let seconds;
+  try {
+    seconds = secondsInTimeZone(settings.systemTimeZone);
+  } catch (error) {
+    seconds = secondsInTimeZone('Asia/Bishkek');
+  }
+  return {
+    allowed: isSecondsInWindow(seconds, settings.openingTime, settings.closingTime),
+    openingTime: settings.openingTime,
+    closingTime: settings.closingTime,
+  };
 };
 
 const computeCommission = (price, rate) => {
@@ -79,9 +90,13 @@ export const startOrder = asyncHandler(async (req, res, next) => {
   const member = await Member.findById(decoded.id);
   if (!member) return next(new ApiError(401, 'Not authorized, user not found'));
 
-  if (!timeInWindow(new Date())) {
+  const orderWindow = await timeInWindow();
+  if (!orderWindow.allowed) {
     return next(
-      new ApiError(400, 'Start is not allowed at this time. Working hours: 09:00:00 - 23:58:59')
+      new ApiError(
+        400,
+        `Start is not allowed at this time. Working hours: ${orderWindow.openingTime} - ${orderWindow.closingTime}`
+      )
     );
   }
 

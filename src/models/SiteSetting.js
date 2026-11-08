@@ -28,6 +28,36 @@ const siteSettingSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    defaultLanguage: {
+      type: String,
+      default: 'ru',
+      trim: true,
+    },
+    systemTimeZone: {
+      type: String,
+      default: 'Asia/Bishkek',
+      trim: true,
+    },
+    openingTime: {
+      type: String,
+      default: '09:00:00',
+      trim: true,
+    },
+    closingTime: {
+      type: String,
+      default: '23:58:59',
+      trim: true,
+    },
+    withdrawalStartTime: {
+      type: String,
+      default: '01:00:00',
+      trim: true,
+    },
+    withdrawalEndTime: {
+      type: String,
+      default: '17:00:00',
+      trim: true,
+    },
   },
   {
     timestamps: true,

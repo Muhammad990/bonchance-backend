@@ -29,6 +29,12 @@ export const getSettings = asyncHandler(async (req, res) => {
     new ApiResponse(200, 'Settings fetched successfully', {
       transactionsDisabled: !!setting.transactionsDisabled,
       disabledMessage: setting.disabledMessage,
+      defaultLanguage: setting.defaultLanguage || 'ru',
+      systemTimeZone: setting.systemTimeZone || 'Asia/Bishkek',
+      openingTime: setting.openingTime || '09:00:00',
+      closingTime: setting.closingTime || '23:58:59',
+      withdrawalStartTime: setting.withdrawalStartTime || '01:00:00',
+      withdrawalEndTime: setting.withdrawalEndTime || '17:00:00',
     })
   );
 });
@@ -65,12 +71,34 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
     setting.disabledMessage = text || SiteSetting.DEFAULT_DISABLED_MESSAGE;
   }
 
+  const BASIC_FIELDS = [
+    'defaultLanguage',
+    'systemTimeZone',
+    'openingTime',
+    'closingTime',
+    'withdrawalStartTime',
+    'withdrawalEndTime',
+  ];
+  for (const field of BASIC_FIELDS) {
+    if (req.body[field] !== undefined) {
+      const value = String(req.body[field]).trim();
+      if (!value) return next(new ApiError(400, `${field} is required`));
+      setting[field] = value;
+    }
+  }
+
   await setting.save();
 
   res.status(200).json(
     new ApiResponse(200, 'Settings updated successfully', {
       transactionsDisabled: setting.transactionsDisabled,
       disabledMessage: setting.disabledMessage,
+      defaultLanguage: setting.defaultLanguage,
+      systemTimeZone: setting.systemTimeZone,
+      openingTime: setting.openingTime,
+      closingTime: setting.closingTime,
+      withdrawalStartTime: setting.withdrawalStartTime,
+      withdrawalEndTime: setting.withdrawalEndTime,
     })
   );
 });

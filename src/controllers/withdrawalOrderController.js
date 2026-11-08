@@ -9,6 +9,7 @@ import { logWalletTransaction } from '../utils/walletLogger.js';
 import { getLevelLimits } from '../utils/membershipLevelHelper.js';
 import { assertTransactionsEnabled } from './settingController.js';
 import jwt from 'jsonwebtoken';
+import { getBasicTimeSettings, secondsInTimeZone, isSecondsInWindow } from '../utils/timeWindowHelper.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -95,13 +96,18 @@ export const createWithdrawalOrder = asyncHandler(async (req, res, next) => {
   await assertTransactionsEnabled();
 
   // Withdrawal sirf 01:00:00 - 17:00:00 ke darmiyan allowed hai
-  const now = new Date();
-  const secondsOfDay = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  if (secondsOfDay < 1 * 3600 || secondsOfDay > 17 * 3600) {
+  const basicSettings = await getBasicTimeSettings();
+  let currentSeconds;
+  try {
+    currentSeconds = secondsInTimeZone(basicSettings.systemTimeZone);
+  } catch (error) {
+    currentSeconds = secondsInTimeZone('Asia/Bishkek');
+  }
+  if (!isSecondsInWindow(currentSeconds, basicSettings.withdrawalStartTime, basicSettings.withdrawalEndTime)) {
     return next(
       new ApiError(
         403,
-        'Withdrawals are allowed between 01:00:00 and 17:00:00 only. Please try again during this time.'
+        `Withdrawals are allowed between ${basicSettings.withdrawalStartTime} and ${basicSettings.withdrawalEndTime} only. Please try again during this time.`
       )
     );
   }

@@ -9,6 +9,7 @@ import {
   changePassword,
   adminChangePassword,
   markRejectionSeen,
+  adminChangeUsername,
 } from '../controllers/authController.js';
 import { validate } from '../middleware/validationMiddleware.js';
 
@@ -38,5 +39,6 @@ router.get('/me', getMe);
 router.put('/change-password', changePassword);
 router.put('/admin-change-password', adminChangePassword);
 router.post('/mark-rejection-seen', markRejectionSeen);
+router.put('/admin-change-username', adminChangeUsername);
 
 export default router;

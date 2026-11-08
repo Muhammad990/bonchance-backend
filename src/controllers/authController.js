@@ -425,6 +425,50 @@ export const adminChangePassword = asyncHandler(async (req, res, next) => {
   );
 });
 
+export const adminChangeUsername = asyncHandler(async (req, res, next) => {
+  const token = readToken(req);
+  if (!token) {
+    return next(new ApiError(401, 'Not authorized, no token provided'));
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, env.jwtSecret);
+  } catch (err) {
+    return next(
+      new ApiError(401, err.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token')
+    );
+  }
+
+  const newUsername = String(req.body.newUsername || '').trim().toLowerCase();
+
+  if (!newUsername) {
+    return next(new ApiError(400, 'New username is required'));
+  }
+  if (newUsername.length > 50) {
+    return next(new ApiError(400, 'Username cannot exceed 50 characters'));
+  }
+
+  const admin = await Admin.findById(decoded.id);
+  if (!admin) {
+    return next(new ApiError(401, 'Not authorized, admin not found'));
+  }
+  if (admin.username === newUsername) {
+    return next(new ApiError(400, 'New username must be different from the current username'));
+  }
+  const duplicate = await Admin.findOne({ username: newUsername });
+  if (duplicate) {
+    return next(new ApiError(409, 'Username is already in use'));
+  }
+
+  admin.username = newUsername;
+  await admin.save();
+
+  res.status(200).json(
+    new ApiResponse(200, 'Username updated successfully', { username: admin.username })
+  );
+});
+
 export const markRejectionSeen = asyncHandler(async (req, res, next) => {
   const token = readToken(req);
   if (!token) {
