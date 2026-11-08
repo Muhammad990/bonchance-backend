@@ -156,7 +156,12 @@ export const startOrder = asyncHandler(async (req, res, next) => {
       return next(new ApiError(400, 'No available products for today'));
     }
 
-    product = available[Math.floor(Math.random() * available.length)];
+    available.sort((a, b) => {
+      const priceDiff = (Number(a.price) || 0) - (Number(b.price) || 0);
+      if (priceDiff !== 0) return priceDiff;
+      return (a.pId || 0) - (b.pId || 0);
+    });
+    product = available[0];
   }
 
   const price = Math.round((Number(product.price) || 0) * 100) / 100;
