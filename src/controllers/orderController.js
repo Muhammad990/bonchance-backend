@@ -156,31 +156,22 @@ export const startOrder = asyncHandler(async (req, res, next) => {
       return next(new ApiError(400, 'No available products for today'));
     }
 
-    available.sort((a, b) => {
+    const sortByPrice = (a, b) => {
       const priceDiff = (Number(a.price) || 0) - (Number(b.price) || 0);
       if (priceDiff !== 0) return priceDiff;
       return (a.pId || 0) - (b.pId || 0);
-    });
+    };
+    available.sort(sortByPrice);
     const balance = Number(member.availableFunds) || 0;
-    product = available.find((item) => Math.round((Number(item.price) || 0) * 100) / 100 <= balance);
+    const canAfford = (item) => Math.round((Number(item.price) || 0) * 100) / 100 <= balance;
+    product = available.find(canAfford);
 
     if (!product) {
-      const unavailableProduct = available[0];
-      const unavailablePrice = Math.round((Number(unavailableProduct.price) || 0) * 100) / 100;
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient balance',
-        insufficientBalance: true,
-        data: {
-          order: {
-            productName: unavailableProduct.name || '',
-            productPicture: unavailableProduct.picture || '',
-            productRating: Number(unavailableProduct.rating) || 0,
-            unitPrice: unavailablePrice,
-            commission: computeCommission(unavailablePrice, level?.orderCommissionRate),
-          },
-        },
-      });
+      product = products.filter(canAfford).sort(sortByPrice)[0];
+    }
+
+    if (!product) {
+      return next(new ApiError(400, 'No product available within your balance'));
     }
   }
 
