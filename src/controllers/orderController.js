@@ -161,7 +161,27 @@ export const startOrder = asyncHandler(async (req, res, next) => {
       if (priceDiff !== 0) return priceDiff;
       return (a.pId || 0) - (b.pId || 0);
     });
-    product = available[0];
+    const balance = Number(member.availableFunds) || 0;
+    product = available.find((item) => Math.round((Number(item.price) || 0) * 100) / 100 <= balance);
+
+    if (!product) {
+      const unavailableProduct = available[0];
+      const unavailablePrice = Math.round((Number(unavailableProduct.price) || 0) * 100) / 100;
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient balance',
+        insufficientBalance: true,
+        data: {
+          order: {
+            productName: unavailableProduct.name || '',
+            productPicture: unavailableProduct.picture || '',
+            productRating: Number(unavailableProduct.rating) || 0,
+            unitPrice: unavailablePrice,
+            commission: computeCommission(unavailablePrice, level?.orderCommissionRate),
+          },
+        },
+      });
+    }
   }
 
   const price = Math.round((Number(product.price) || 0) * 100) / 100;
