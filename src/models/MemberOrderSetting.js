@@ -2,7 +2,9 @@ import mongoose from 'mongoose';
 
 const productItemSchema = new mongoose.Schema(
   {
+    orderNumber: { type: Number, min: 1 },
     productId: { type: String, default: '' },
+    displayId: { type: String, default: '' },
     name: { type: String, default: '', trim: true },
     picture: { type: String, default: '' },
     price: { type: Number, default: 0 },

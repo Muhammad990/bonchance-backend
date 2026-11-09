@@ -12,8 +12,16 @@ export const getMemberOrderSetting = asyncHandler(async (req, res, next) => {
   if (!member) return next(new ApiError(404, 'Member not found'));
 
   const setting = await fetchSetting(member.memberId);
+  const products = (setting ? setting.products : []).map((product, index) => {
+    const item = product.toObject ? product.toObject() : { ...product };
+    return {
+      ...item,
+      orderNumber: Number(item.orderNumber) || index + 1,
+      displayId: item.displayId || item.productId,
+    };
+  });
   res.status(200).json(
-    new ApiResponse(200, 'Order setting fetched', { products: setting ? setting.products : [] })
+    new ApiResponse(200, 'Order setting fetched', { products })
   );
 });
 
@@ -31,14 +39,16 @@ export const saveMemberOrderSetting = asyncHandler(async (req, res, next) => {
   if (commissionRate > 1) commissionRate /= 100;
 
   const products = raw
-    .filter((p) => p && p.productId)
+    .filter((p) => p && p.productId && Number.isInteger(Number(p.orderNumber)) && Number(p.orderNumber) > 0)
     .map((p) => {
       const price = Math.round((Number(p.price) || 0) * 100) / 100;
       const multiplier = Math.max(0, Number(p.multiplier) || 1);
       const baseProfit = price * commissionRate;
       const returnAmount = Math.round(baseProfit * multiplier * 100) / 100;
       return {
+        orderNumber: Number(p.orderNumber),
         productId: String(p.productId),
+        displayId: String(p.displayId || p.productId),
         name: String(p.name || '').trim(),
         picture: p.picture || '',
         price,
@@ -46,7 +56,12 @@ export const saveMemberOrderSetting = asyncHandler(async (req, res, next) => {
         multiplier,
         returnAmount,
       };
-    });
+    })
+    .sort((a, b) => a.orderNumber - b.orderNumber);
+
+  if (new Set(products.map((product) => product.orderNumber)).size !== products.length) {
+    return next(new ApiError(400, 'Each order number can only have one pinned product'));
+  }
 
   for (const product of products) {
     if (product.returnAmount > product.price) {

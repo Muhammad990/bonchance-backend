@@ -127,20 +127,23 @@ export const startOrder = asyncHandler(async (req, res, next) => {
   }
 
   let product = null;
-  let fromQueue = false;
+  let fromPin = false;
   const setting = await MemberOrderSetting.findOne({ memberId: member.memberId });
-  if (setting && setting.products && setting.products.length > 0) {
-    const head = setting.products[0];
+  const orderNumber = (Number(member.taskStatus) || 0) + 1;
+  const pinnedProduct = setting?.products?.find(
+    (item, index) => (Number(item.orderNumber) || index + 1) === orderNumber
+  );
+  if (pinnedProduct) {
     product = {
-      _id: head.productId,
-      name: head.name || '',
-      picture: head.picture || '',
-      price: String(head.price ?? 0),
-      rating: Number(head.rating) || 0,
-      returnAmount: head.returnAmount,
-      multiplier: head.multiplier,
+      _id: pinnedProduct.productId,
+      name: pinnedProduct.name || '',
+      picture: pinnedProduct.picture || '',
+      price: String(pinnedProduct.price ?? 0),
+      rating: Number(pinnedProduct.rating) || 0,
+      returnAmount: pinnedProduct.returnAmount,
+      multiplier: pinnedProduct.multiplier,
     };
-    fromQueue = true;
+    fromPin = true;
   } else {
     const products = await Product.find().lean();
     const balance = Number(member.availableFunds) || 0;
@@ -168,12 +171,7 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     return next(new ApiError(400, 'Insufficient balance to place this order'));
   }
 
-  if (fromQueue && setting) {
-    setting.products.shift();
-    await setting.save();
-  }
-
-  const commission = fromQueue && Number.isFinite(Number(product.returnAmount)) && Number(product.returnAmount) > 0
+  const commission = fromPin && Number.isFinite(Number(product.returnAmount))
     ? Math.round(Number(product.returnAmount) * 100) / 100
     : computeCommission(price, level?.orderCommissionRate);
   const order = await Order.create({
