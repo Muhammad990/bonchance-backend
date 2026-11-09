@@ -143,36 +143,23 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     fromQueue = true;
   } else {
     const products = await Product.find().lean();
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const usedToday = await Order.find({
-      memberId: member.memberId,
-      createdAt: { $gte: todayStart },
-    }).distinct('productId');
-    const usedSet = new Set(usedToday.map((id) => String(id)));
-    const available = products.filter((p) => !usedSet.has(String(p._id)));
-
-    if (available.length === 0) {
-      return next(new ApiError(400, 'No available products for today'));
-    }
-
-    const sortByPrice = (a, b) => {
-      const priceDiff = (Number(a.price) || 0) - (Number(b.price) || 0);
-      if (priceDiff !== 0) return priceDiff;
-      return (a.pId || 0) - (b.pId || 0);
-    };
-    available.sort(sortByPrice);
     const balance = Number(member.availableFunds) || 0;
     const canAfford = (item) => Math.round((Number(item.price) || 0) * 100) / 100 <= balance;
-    product = available.find(canAfford);
+    const affordableProducts = products.filter(canAfford);
 
-    if (!product) {
-      product = products.filter(canAfford).sort(sortByPrice)[0];
-    }
-
-    if (!product) {
+    if (affordableProducts.length === 0) {
       return next(new ApiError(400, 'No product available within your balance'));
     }
+
+    const lastOrder = await Order.findOne({ memberId: member.memberId })
+      .sort({ createdAt: -1 })
+      .select('productId')
+      .lean();
+    const alternatives = affordableProducts.filter(
+      (item) => String(item._id) !== String(lastOrder?.productId)
+    );
+    const selectionPool = alternatives.length > 0 ? alternatives : affordableProducts;
+    product = selectionPool[Math.floor(Math.random() * selectionPool.length)];
   }
 
   const price = Math.round((Number(product.price) || 0) * 100) / 100;
