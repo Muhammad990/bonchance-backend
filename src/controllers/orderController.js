@@ -123,7 +123,11 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     transactionStatus: 'Waiting for Payment',
   });
   if (existing) {
-    return res.status(200).json(new ApiResponse(200, 'Order fetched', { order: existing }));
+    const insufficientBalance = (Number(member.availableFunds) || 0) < 0;
+    const memberData = await withMemberVolume(member);
+    return res.status(200).json(
+      new ApiResponse(200, 'Order fetched', { order: existing, insufficientBalance, member: memberData })
+    );
   }
 
   let product = null;
@@ -146,30 +150,24 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     fromPin = true;
   } else {
     const products = await Product.find().lean();
-    const balance = Number(member.availableFunds) || 0;
-    const canAfford = (item) => Math.round((Number(item.price) || 0) * 100) / 100 <= balance;
-    const affordableProducts = products.filter(canAfford);
-
-    if (affordableProducts.length === 0) {
-      return next(new ApiError(400, 'No product available within your balance'));
+    if (products.length === 0) {
+      return next(new ApiError(400, 'No products are available'));
     }
 
     const lastOrder = await Order.findOne({ memberId: member.memberId })
       .sort({ createdAt: -1 })
       .select('productId')
       .lean();
-    const alternatives = affordableProducts.filter(
+    const alternatives = products.filter(
       (item) => String(item._id) !== String(lastOrder?.productId)
     );
-    const selectionPool = alternatives.length > 0 ? alternatives : affordableProducts;
+    const selectionPool = alternatives.length > 0 ? alternatives : products;
     product = selectionPool[Math.floor(Math.random() * selectionPool.length)];
   }
 
   const price = Math.round((Number(product.price) || 0) * 100) / 100;
-
-  if ((Number(member.availableFunds) || 0) < price) {
-    return next(new ApiError(400, 'Insufficient balance to place this order'));
-  }
+  const balanceBefore = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+  const insufficientBalance = balanceBefore < price;
 
   const commission = fromPin && Number.isFinite(Number(product.returnAmount))
     ? Math.round(Number(product.returnAmount) * 100) / 100
@@ -179,7 +177,7 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     memberId: member.memberId,
     username: member.phoneNumber,
     userNickname: member.nickname,
-    balance: Math.round((Number(member.availableFunds) || 0) * 100) / 100,
+    balance: balanceBefore,
     superiorId: member.superiorId || '',
     productId: String(product._id),
     productName: product.name || '',
@@ -194,7 +192,19 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     settlementTime: '',
   });
 
-  res.status(201).json(new ApiResponse(201, 'Order started', { order }));
+  member.availableFunds = Math.round((balanceBefore - price) * 100) / 100;
+  await member.save();
+  await logWalletTransaction({
+    member,
+    before: balanceBefore,
+    after: member.availableFunds,
+    description: 'Order Product Purchase',
+  });
+
+  const memberData = await withMemberVolume(member);
+  res.status(201).json(
+    new ApiResponse(201, 'Order started', { order, insufficientBalance, member: memberData })
+  );
 });
 
 export const completeOrder = asyncHandler(async (req, res, next) => {
@@ -225,6 +235,10 @@ export const completeOrder = asyncHandler(async (req, res, next) => {
 
   if (order.transactionStatus !== 'Waiting for Payment') {
     return next(new ApiError(400, 'Order has already been completed'));
+  }
+
+  if ((Number(member.availableFunds) || 0) < 0) {
+    return next(new ApiError(400, 'Insufficient balance to complete this order'));
   }
 
   const commission = Math.round((Number(order.commission) || 0) * 100) / 100;
