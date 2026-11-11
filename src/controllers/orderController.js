@@ -200,14 +200,16 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     settlementTime: '',
   });
 
-  member.availableFunds = Math.round((balanceBefore - price) * 100) / 100;
-  await member.save();
-  await logWalletTransaction({
-    member,
-    before: balanceBefore,
-    after: member.availableFunds,
-    description: 'Order Product Purchase',
-  });
+  if (insufficientBalance) {
+    member.availableFunds = Math.round((balanceBefore - price) * 100) / 100;
+    await member.save();
+    await logWalletTransaction({
+      member,
+      before: balanceBefore,
+      after: member.availableFunds,
+      description: 'Order Product Purchase',
+    });
+  }
 
   const memberData = await withMemberVolume(member);
   res.status(201).json(
