@@ -1,6 +1,7 @@
 import Member from '../models/Member.js';
 import MemberOrderSetting from '../models/MemberOrderSetting.js';
 import MembershipLevel from '../models/MembershipLevel.js';
+import Order from '../models/Order.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -85,5 +86,12 @@ export const resetMemberOrderSetting = asyncHandler(async (req, res, next) => {
   if (!member) return next(new ApiError(404, 'Member not found'));
 
   await MemberOrderSetting.deleteOne({ memberId: member.memberId });
+  await Order.deleteMany({ memberId: member.memberId });
+
+  if ((Number(member.taskStatus) || 0) !== 0) {
+    member.taskStatus = 0;
+    await member.save();
+  }
+
   res.status(200).json(new ApiResponse(200, 'Order setting reset successfully', { products: [] }));
 });
