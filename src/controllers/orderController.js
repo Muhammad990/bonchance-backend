@@ -123,7 +123,7 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     transactionStatus: 'Waiting for Payment',
   });
   if (existing) {
-    const insufficientBalance = false;
+    const insufficientBalance = (Number(member.availableFunds) || 0) < 0;
     const memberData = await withMemberVolume(member);
     return res.status(200).json(
       new ApiResponse(200, 'Order fetched', { order: existing, insufficientBalance, member: memberData })
@@ -175,7 +175,7 @@ export const startOrder = asyncHandler(async (req, res, next) => {
 
   const price = Math.round((Number(product.price) || 0) * 100) / 100;
   const balanceBefore = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
-  const insufficientBalance = false;
+  const insufficientBalance = balanceBefore < price;
 
   const commission = fromPin && Number.isFinite(Number(product.returnAmount))
     ? Math.round(Number(product.returnAmount) * 100) / 100
@@ -198,6 +198,15 @@ export const startOrder = asyncHandler(async (req, res, next) => {
     transactionStatus: 'Waiting for Payment',
     orderTime: formatDateTime(new Date()),
     settlementTime: '',
+  });
+
+  member.availableFunds = Math.round((balanceBefore - price) * 100) / 100;
+  await member.save();
+  await logWalletTransaction({
+    member,
+    before: balanceBefore,
+    after: member.availableFunds,
+    description: 'Order Product Purchase',
   });
 
   const memberData = await withMemberVolume(member);
