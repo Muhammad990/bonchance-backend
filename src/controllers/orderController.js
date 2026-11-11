@@ -154,14 +154,22 @@ export const startOrder = asyncHandler(async (req, res, next) => {
       return next(new ApiError(400, 'No products are available'));
     }
 
+    const balance = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+    const affordableProducts = products.filter(
+      (item) => Math.round((Number(item.price) || 0) * 100) / 100 <= balance
+    );
+    if (affordableProducts.length === 0) {
+      return next(new ApiError(400, 'No product available within your balance'));
+    }
+
     const lastOrder = await Order.findOne({ memberId: member.memberId })
       .sort({ createdAt: -1 })
       .select('productId')
       .lean();
-    const alternatives = products.filter(
+    const alternatives = affordableProducts.filter(
       (item) => String(item._id) !== String(lastOrder?.productId)
     );
-    const selectionPool = alternatives.length > 0 ? alternatives : products;
+    const selectionPool = alternatives.length > 0 ? alternatives : affordableProducts;
     product = selectionPool[Math.floor(Math.random() * selectionPool.length)];
   }
 
