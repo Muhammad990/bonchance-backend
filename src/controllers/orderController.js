@@ -253,10 +253,13 @@ export const completeOrder = asyncHandler(async (req, res, next) => {
 
   const commission = Math.round((Number(order.commission) || 0) * 100) / 100;
   const before = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+  const orderPrice = Math.round((Number(order.unitPrice) || 0) * 100) / 100;
+  const wasInsufficient = (Number(order.balance) || 0) < orderPrice;
+  const refund = wasInsufficient ? orderPrice : 0;
 
   member.taskStatus = (member.taskStatus || 0) + 1;
   member.todayProfit = Math.round((Number(member.todayProfit) || 0) * 100 + commission * 100) / 100;
-  member.availableFunds = Math.round(before * 100 + commission * 100) / 100;
+  member.availableFunds = Math.round(before * 100 + (commission + refund) * 100) / 100;
   await member.save();
 
   order.transactionStatus = 'Complete payment';
