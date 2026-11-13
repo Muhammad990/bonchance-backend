@@ -245,10 +245,24 @@ export const createWithdrawalOrder = asyncHandler(async (req, res, next) => {
     bankInformation,
     withdrawalAmount: amountValue,
     handlingFee,
+    fundsDeducted: true,
     state: 'Pending',
     reviewInformation: '',
     creationTime: formatDateTime(new Date()),
     processingTime: '',
+  });
+
+  // Withdrawal request ke waqt hi amount account se deduct kar do.
+  // Approve par dobara deduct nahi hoga, reject par wapas refund hoga.
+  const before = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+  member.availableFunds = Math.round((before - amountValue) * 100) / 100;
+  await member.save();
+
+  await logWalletTransaction({
+    member,
+    before,
+    after: member.availableFunds,
+    description: 'Withdrawal request',
   });
 
   res.status(201).json(
@@ -316,10 +330,35 @@ export const editWithdrawalOrder = asyncHandler(async (req, res, next) => {
   const { withdrawalAmount, handlingFee } = req.body;
 
   if (withdrawalAmount !== undefined && withdrawalAmount !== null && withdrawalAmount !== '') {
-    const amountValue = Number(withdrawalAmount);
+    const amountValue = Math.round(Number(withdrawalAmount) * 100) / 100;
     if (Number.isNaN(amountValue) || amountValue <= 0) {
       return next(new ApiError(400, 'Withdrawal amount must be greater than 0'));
     }
+
+    const oldAmount = Math.round((Number(order.withdrawalAmount) || 0) * 100) / 100;
+    if (order.fundsDeducted && amountValue !== oldAmount) {
+      const member = await Member.findOne({ memberId: order.memberId });
+      if (!member) {
+        return next(new ApiError(404, 'Member not found'));
+      }
+
+      const delta = Math.round((amountValue - oldAmount) * 100) / 100;
+      const before = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+      if (delta > 0 && delta > before) {
+        return next(new ApiError(400, 'Insufficient balance for this withdrawal'));
+      }
+
+      member.availableFunds = Math.round((before - delta) * 100) / 100;
+      await member.save();
+
+      await logWalletTransaction({
+        member,
+        before,
+        after: member.availableFunds,
+        description: delta > 0 ? 'Withdrawal amount increased' : 'Withdrawal amount decreased',
+      });
+    }
+
     order.withdrawalAmount = amountValue;
   }
 
@@ -351,26 +390,32 @@ export const approveWithdrawalOrder = asyncHandler(async (req, res, next) => {
     return next(new ApiError(400, 'Withdrawal order has already been reviewed'));
   }
 
-  const member = await Member.findOne({ memberId: order.memberId });
-  if (!member) {
-    return next(new ApiError(404, 'Member not found'));
+  // Purane pending orders jinka amount abhi tak deduct nahi hua, unke liye
+  // approve par deduct karo. Naye orders ka amount request ke waqt hi deduct ho chuka hai.
+  if (!order.fundsDeducted) {
+    const member = await Member.findOne({ memberId: order.memberId });
+    if (!member) {
+      return next(new ApiError(404, 'Member not found'));
+    }
+
+    const amount = Math.round((Number(order.withdrawalAmount) || 0) * 100) / 100;
+    const before = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+    if (amount > before) {
+      return next(new ApiError(400, 'Insufficient balance for this withdrawal'));
+    }
+
+    member.availableFunds = Math.round((before - amount) * 100) / 100;
+    await member.save();
+
+    await logWalletTransaction({
+      member,
+      before,
+      after: member.availableFunds,
+      description: 'Withdrawal approved',
+    });
+
+    order.fundsDeducted = true;
   }
-
-  const amount = Number(order.withdrawalAmount) || 0;
-  if (amount > (Number(member.availableFunds) || 0)) {
-    return next(new ApiError(400, 'Insufficient balance for this withdrawal'));
-  }
-
-  const before = Number(member.availableFunds) || 0;
-  member.availableFunds = Math.round((before - amount) * 100) / 100;
-  await member.save();
-
-  await logWalletTransaction({
-    member,
-    before,
-    after: member.availableFunds,
-    description: 'Withdrawal approved',
-  });
 
   order.state = 'Approved';
   order.processingTime = formatDateTime(new Date());
@@ -398,16 +443,37 @@ export const rejectWithdrawalOrder = asyncHandler(async (req, res, next) => {
     return next(new ApiError(400, 'Withdrawal order has already been reviewed'));
   }
 
+  const member = await Member.findOne({ memberId: order.memberId });
+  let refunded = false;
+  let before = 0;
+
+  // Request ke waqt deduct hua amount reject par account mein wapas kar do.
+  if (member && order.fundsDeducted) {
+    const amount = Math.round((Number(order.withdrawalAmount) || 0) * 100) / 100;
+    before = Math.round((Number(member.availableFunds) || 0) * 100) / 100;
+    member.availableFunds = Math.round((before + amount) * 100) / 100;
+    refunded = true;
+  }
+
   order.state = 'Rejected';
   order.reviewInformation = String(reason).trim();
   order.processingTime = formatDateTime(new Date());
+  order.fundsDeducted = false;
   await order.save();
 
-  const member = await Member.findOne({ memberId: order.memberId });
   if (member) {
     member.unseenRejection = true;
     member.rejectionReason = String(reason).trim();
     await member.save();
+
+    if (refunded) {
+      await logWalletTransaction({
+        member,
+        before,
+        after: member.availableFunds,
+        description: 'Withdrawal rejected - refund',
+      });
+    }
   }
 
   res.status(200).json(new ApiResponse(200, 'Withdrawal order rejected successfully', order));

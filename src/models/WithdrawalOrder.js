@@ -33,6 +33,10 @@ const withdrawalOrderSchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Handling fee cannot be negative'],
     },
+    fundsDeducted: {
+      type: Boolean,
+      default: false,
+    },
     state: {
       type: String,
       enum: ['Pending', 'Approved', 'Rejected'],
